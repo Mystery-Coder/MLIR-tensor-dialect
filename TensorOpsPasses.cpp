@@ -4,8 +4,8 @@
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/Dialect/Linalg/IR/Linalg.h"
-#include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
@@ -20,30 +20,50 @@ public:
 
   LogicalResult matchAndRewrite(mlir::tensorops::TransposeOp op,
                                 PatternRewriter &rewriter) const override {
-    auto inputType = dyn_cast<RankedTensorType>(op.getInput().getType());
-    auto outputType = dyn_cast<RankedTensorType>(op.getOutput().getType());
+    auto inputType = dyn_cast<MemRefType>(op.getInput().getType());
+    auto outputType = dyn_cast<MemRefType>(op.getOutput().getType());
     if (!inputType || !outputType || inputType.getRank() != 2 || outputType.getRank() != 2)
-      return rewriter.notifyMatchFailure(op, "expected ranked 2D input/output tensors");
+      return rewriter.notifyMatchFailure(op, "expected memref 2D input/output types");
 
     Location loc = op.getLoc();
     Value input = op.getInput();
 
-    SmallVector<OpFoldResult> outShape;
-    outShape.reserve(outputType.getRank());
+    auto getDimValue = [&](int64_t dim) -> Value {
+      int64_t staticDim = inputType.getDimSize(dim);
+      if (staticDim != ShapedType::kDynamic)
+        return rewriter.create<arith::ConstantIndexOp>(loc, staticDim);
+      return rewriter.create<memref::DimOp>(loc, input, dim);
+    };
+
+    Value dim0 = getDimValue(0);
+    Value dim1 = getDimValue(1);
+
+    SmallVector<Value> dynamicSizes;
     for (int64_t i = 0; i < outputType.getRank(); ++i) {
-      int64_t dim = outputType.getDimSize(i);
-      if (dim == ShapedType::kDynamic)
-        outShape.push_back(rewriter.create<tensor::DimOp>(loc, input, i == 0 ? 1 : 0).getResult());
-      else
-        outShape.push_back(rewriter.getIndexAttr(dim));
+      if (outputType.getDimSize(i) == ShapedType::kDynamic)
+        dynamicSizes.push_back(i == 0 ? dim1 : dim0);
     }
 
-    Value init =
-        rewriter.create<tensor::EmptyOp>(loc, outShape, outputType.getElementType());
-    SmallVector<int64_t> permutation = {1, 0};
-    auto transposeOp =
-      rewriter.create<linalg::TransposeOp>(loc, input, init, permutation);
-    rewriter.replaceOp(op, transposeOp.getResult().front());
+    Value output = rewriter.create<memref::AllocOp>(loc, outputType, dynamicSizes);
+
+    Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+
+    auto outer = rewriter.create<scf::ForOp>(loc, c0, dim0, c1);
+    {
+      OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.setInsertionPointToStart(outer.getBody());
+      Value i = outer.getInductionVar();
+
+      auto inner = rewriter.create<scf::ForOp>(loc, c0, dim1, c1);
+      rewriter.setInsertionPointToStart(inner.getBody());
+      Value j = inner.getInductionVar();
+
+      Value inVal = rewriter.create<memref::LoadOp>(loc, input, ValueRange{i, j});
+      rewriter.create<memref::StoreOp>(loc, inVal, output, ValueRange{j, i});
+    }
+
+    rewriter.replaceOp(op, output);
     return success();
   }
 };
@@ -55,19 +75,19 @@ public:
 
   StringRef getArgument() const final { return "lower-tensorops-transpose"; }
   StringRef getDescription() const final {
-    return "Lower tensorops.transpose to linalg.transpose";
+    return "Lower tensorops.transpose to memref + scf loops";
   }
 
   void getDependentDialects(DialectRegistry &registry) const override {
-    registry.insert<arith::ArithDialect, func::FuncDialect, linalg::LinalgDialect,
-                    tensor::TensorDialect>();
+    registry.insert<arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
+                    scf::SCFDialect>();
   }
 
   void runOnOperation() final {
     ConversionTarget target(getContext());
     target.addIllegalDialect<mlir::tensorops::TensorOpsDialect>();
-    target.addLegalDialect<arith::ArithDialect, BuiltinDialect, func::FuncDialect,
-                           linalg::LinalgDialect, tensor::TensorDialect>();
+    target.addLegalDialect<arith::ArithDialect, func::FuncDialect,
+                 memref::MemRefDialect, scf::SCFDialect>();
 
     RewritePatternSet patterns(&getContext());
     patterns.add<LowerTransposePattern>(&getContext());

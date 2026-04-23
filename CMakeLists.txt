@@ -47,8 +47,8 @@ add_mlir_library(MLIRTensorOpsTransforms
 	MLIRIR
 	MLIRPass
 	MLIRTransforms
-	MLIRLinalgDialect
-	MLIRTensorDialect
+	MLIRMemRefDialect
+	MLIRSCFDialect
 	MLIRFuncDialect
 	MLIRArithDialect
 	MLIRTensorOps

@@ -19,7 +19,7 @@ class TensorOps_Op<string mnemonic, list<Trait> traits = []> :
 // 3. The Transpose Operation
 def TransposeOp : TensorOps_Op<"transpose", [Pure]> {
   let summary = "Transpose a 2D tensor.";
-  let arguments = (ins RankedTensorOf<[F32]>:$input);
-  let results = (outs RankedTensorOf<[F32]>:$output);
+  let arguments = (ins MemRefOf<[F32]>:$input);
+  let results = (outs MemRefOf<[F32]>:$output);
   let assemblyFormat = "$input attr-dict `:` type($input) `->` type($output)";
 }
