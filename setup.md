@@ -25,4 +25,6 @@ cmake --build build -j
 
 ```bash
 ./build/tensorops-opt --lower-tensorops-transpose transpose.mlir
+./build/tensorops-opt --lower-tensorops test/alloc_load.mlir
+
 ```
