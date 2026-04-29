@@ -13,6 +13,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
 
+#include "mlir/IR/Builders.h"
 using namespace mlir;
 
 namespace {
@@ -40,6 +41,74 @@ public:
     return success();
   }
 };
+
+// ===================================
+// Lower tensorops.store
+// ===================================
+class LowerStorePattern
+    : public OpRewritePattern<mlir::tensorops::StoreOp> {
+public:
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(
+      mlir::tensorops::StoreOp op,
+      PatternRewriter &rewriter) const override {
+
+    rewriter.create<memref::StoreOp>(
+        op.getLoc(),
+        op.getValue(),
+        op.getInput(),
+        op.getIndices());
+
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+// ===================================
+// Lower tensorops.slice
+// ===================================
+class LowerSlicePattern
+    : public OpRewritePattern<mlir::tensorops::SliceOp> {
+public:
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(
+      mlir::tensorops::SliceOp op,
+      PatternRewriter &rewriter) const override {
+
+    auto resultType =
+        dyn_cast<MemRefType>(op.getResult().getType());
+    if (!resultType)
+      return failure();
+
+    int64_t rank =
+        dyn_cast<MemRefType>(op.getInput().getType())
+            .getRank();
+
+    ValueRange offsets = op.getOffsets();
+    ValueRange sizes   = op.getSizes();
+    ValueRange strides = op.getStrides();
+
+    if ((int64_t)offsets.size() != rank ||
+        (int64_t)sizes.size()   != rank ||
+        (int64_t)strides.size() != rank)
+      return failure();
+
+    auto subview =
+        rewriter.create<memref::SubViewOp>(
+            op.getLoc(),
+            resultType,
+            op.getInput(),
+            offsets,
+            sizes,
+            strides);
+
+    rewriter.replaceOp(op, subview.getResult());
+    return success();
+  }
+};
+
 
 // ===================================
 // Lower tensorops.load
@@ -207,6 +276,8 @@ public:
     patterns.add<
         LowerAllocPattern,
         LowerLoadPattern,
+        LowerStorePattern,
+        LowerSlicePattern,
         LowerTransposePattern>(
         &getContext());
 

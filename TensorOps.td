@@ -55,3 +55,38 @@ def LoadOp : TensorOps_Op<"load", [Pure]> {
   let assemblyFormat =
     "$input `[` $indices `]` attr-dict `:` type($input)";
 }
+
+// =======================
+// tensorops.store
+// =======================
+def StoreOp : TensorOps_Op<"store", [Pure]> {
+  let summary = "Store a value into a memref";
+
+  let arguments = (
+    ins F32:$value,
+    AnyMemRef:$input,
+    Variadic<Index>:$indices
+  );
+
+  let assemblyFormat =
+    "$value `,` $input `[` $indices `]` attr-dict `:` type($input)";
+}
+
+// =======================
+// tensorops.slice
+// =======================
+def SliceOp : TensorOps_Op<"slice", [Pure, AttrSizedOperandSegments]> {
+  let summary = "Extract a sub-view of a memref";
+
+  let arguments = (
+    ins AnyMemRef:$input,
+    Variadic<Index>:$offsets,
+    Variadic<Index>:$sizes,
+    Variadic<Index>:$strides
+  );
+
+  let results = (outs AnyMemRef:$result);
+
+  let hasCustomAssemblyFormat = 1;
+}
+
