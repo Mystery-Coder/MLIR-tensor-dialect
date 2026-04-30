@@ -75,18 +75,22 @@ def StoreOp : TensorOps_Op<"store", [Pure]> {
 // =======================
 // tensorops.slice
 // =======================
-def SliceOp : TensorOps_Op<"slice", [Pure, AttrSizedOperandSegments]> {
-  let summary = "Extract a sub-view of a memref";
+def SliceOp : TensorOps_Op<"slice", [Pure]> {
+  let summary = "Extract a 2D sub-view of a memref";
 
   let arguments = (
     ins AnyMemRef:$input,
-    Variadic<Index>:$offsets,
-    Variadic<Index>:$sizes,
-    Variadic<Index>:$strides
+    Index:$offset0, Index:$offset1,
+    Index:$size0,   Index:$size1,
+    Index:$stride0, Index:$stride1
   );
 
   let results = (outs AnyMemRef:$result);
 
-  let hasCustomAssemblyFormat = 1;
+  let assemblyFormat = [{
+    $input `[` $offset0 `,` $offset1 `]`
+           `[` $size0   `,` $size1   `]`
+           `[` $stride0 `,` $stride1 `]`
+    attr-dict `:` type($input) `to` type($result)
+  }];
 }
-

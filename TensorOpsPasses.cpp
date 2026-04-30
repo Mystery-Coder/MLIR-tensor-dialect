@@ -82,18 +82,9 @@ public:
     if (!resultType)
       return failure();
 
-    int64_t rank =
-        dyn_cast<MemRefType>(op.getInput().getType())
-            .getRank();
-
-    ValueRange offsets = op.getOffsets();
-    ValueRange sizes   = op.getSizes();
-    ValueRange strides = op.getStrides();
-
-    if ((int64_t)offsets.size() != rank ||
-        (int64_t)sizes.size()   != rank ||
-        (int64_t)strides.size() != rank)
-      return failure();
+    SmallVector<Value> offsets = {op.getOffset0(), op.getOffset1()};
+    SmallVector<Value> sizes   = {op.getSize0(),   op.getSize1()};
+    SmallVector<Value> strides = {op.getStride0(), op.getStride1()};
 
     auto subview =
         rewriter.create<memref::SubViewOp>(
@@ -108,7 +99,6 @@ public:
     return success();
   }
 };
-
 
 // ===================================
 // Lower tensorops.load
